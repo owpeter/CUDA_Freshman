@@ -17,51 +17,76 @@ __global__ void sumArraysGPU(float*a,float*b,float*res)
 {
   //int i=threadIdx.x;
   int i=blockIdx.x*blockDim.x+threadIdx.x;
+  // blockIdx.x: 当前线程所在的block在grid中的索引（从0开始）
+  // blockDim.x: 每个block中的线程数量（在你的代码中是1024）。
+  // threadIdx.x: 当前线程在block内的局部索引（0到1023）。
+  // 得到的i是当前线程的全局唯一索引
   res[i]=a[i]+b[i];
+  printf("[%d]\t\tres: %f\n", i, res[i]);
 }
-int main(int argc,char **argv)
+// Main function with command line arguments
+int main(int argc, char **argv) 
 {
-  int dev = 0;
-  cudaSetDevice(dev);
+    // Set up CUDA device
+    int dev = 0;  // Use device 0 (the first GPU)
+    cudaSetDevice(dev);  // Set the current CUDA device
 
-  int nElem=1<<14;
-  printf("Vector size:%d\n",nElem);
-  int nByte=sizeof(float)*nElem;
-  float *a_h=(float*)malloc(nByte);
-  float *b_h=(float*)malloc(nByte);
-  float *res_h=(float*)malloc(nByte);
-  float *res_from_gpu_h=(float*)malloc(nByte);
-  memset(res_h,0,nByte);
-  memset(res_from_gpu_h,0,nByte);
+    // Define vector size and calculate memory requirements
+    int nElem = 1 << 14;  // Vector size = 2^14 = 16384 elements
+    printf("Vector size: %d\n", nElem);
+    int nByte = sizeof(float) * nElem;  // Total bytes needed for each array
 
-  float *a_d,*b_d,*res_d;
-  CHECK(cudaMalloc((float**)&a_d,nByte));
-  CHECK(cudaMalloc((float**)&b_d,nByte));
-  CHECK(cudaMalloc((float**)&res_d,nByte));
+    // Allocate host (CPU) memory
+    float *a_h = (float*)malloc(nByte);       // Host array a
+    float *b_h = (float*)malloc(nByte);       // Host array b
+    float *res_h = (float*)malloc(nByte);     // Host result from CPU computation
+    float *res_from_gpu_h = (float*)malloc(nByte);  // Host result from GPU computation
+    
+    // Initialize result arrays to 0
+    memset(res_h, 0, nByte);
+    memset(res_from_gpu_h, 0, nByte);
 
-  initialData(a_h,nElem);
-  initialData(b_h,nElem);
+    // Allocate device (GPU) memory
+    float *a_d, *b_d, *res_d;
+    CHECK(cudaMalloc((float**)&a_d, nByte));    // Device array a
+    CHECK(cudaMalloc((float**)&b_d, nByte));    // Device array b
+    CHECK(cudaMalloc((float**)&res_d, nByte));  // Device result array
 
-  CHECK(cudaMemcpy(a_d,a_h,nByte,cudaMemcpyHostToDevice));
-  CHECK(cudaMemcpy(b_d,b_h,nByte,cudaMemcpyHostToDevice));
+    // Initialize input data on host
+    initialData(a_h, nElem);  // Fill array a with initial values
+    initialData(b_h, nElem);  // Fill array b with initial values
 
-  dim3 block(1024);
-  dim3 grid(nElem/block.x);
-  sumArraysGPU<<<grid,block>>>(a_d,b_d,res_d);
-  printf("Execution configuration<<<%d,%d>>>\n",grid.x,block.x);
+    // Copy data from host -> device
+    CHECK(cudaMemcpy(a_d, a_h, nByte, cudaMemcpyHostToDevice));
+    CHECK(cudaMemcpy(b_d, b_h, nByte, cudaMemcpyHostToDevice));
 
-  CHECK(cudaMemcpy(res_from_gpu_h,res_d,nByte,cudaMemcpyDeviceToHost));
-  sumArrays(a_h,b_h,res_h,nElem);
+    // Define CUDA kernel execution configuration
+    dim3 block(1024);  // Each block has 1024 threads
+    dim3 grid(nElem / block.x);  // Calculate number of blocks needed
+    
+    // Launch the kernel to perform vector addition on GPU
+    sumArraysGPU<<<grid, block>>>(a_d, b_d, res_d);
+    printf("Execution configuration<<<%d, %d>>>\n", grid.x, block.x);
 
-  checkResult(res_h,res_from_gpu_h,nElem);
-  cudaFree(a_d);
-  cudaFree(b_d);
-  cudaFree(res_d);
+    // Copy results back from device to host
+    CHECK(cudaMemcpy(res_from_gpu_h, res_d, nByte, cudaMemcpyDeviceToHost));
+    
+    // Perform the same computation on CPU for verification
+    sumArrays(a_h, b_h, res_h, nElem);
 
-  free(a_h);
-  free(b_h);
-  free(res_h);
-  free(res_from_gpu_h);
+    // Compare GPU and CPU results
+    checkResult(res_h, res_from_gpu_h, nElem);
 
-  return 0;
+    // Free device memory
+    cudaFree(a_d);
+    cudaFree(b_d);
+    cudaFree(res_d);
+
+    // Free host memory
+    free(a_h);
+    free(b_h);
+    free(res_h);
+    free(res_from_gpu_h);
+
+    return 0;
 }
