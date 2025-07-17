@@ -46,19 +46,31 @@ int main(int argc,char **argv)
   CHECK(cudaMemcpy(a_d,a_h,nByte,cudaMemcpyHostToDevice));
   CHECK(cudaMemcpy(b_d,b_h,nByte,cudaMemcpyHostToDevice));
 
-  dim3 block(512);
+  dim3 block(256);
   dim3 grid((nElem-1)/block.x+1);
 
   //timer
-  double iStart,iElaps;
-  iStart=cpuSecond();
+  // double iStart,iElaps;
+  // iStart=cpuSecond();
+  cudaEvent_t start, end;
+  cudaEventCreate(&start);
+  cudaEventCreate(&end);
+
+  cudaEventRecord(start);
   sumArraysGPU<<<grid,block>>>(a_d,b_d,res_d,nElem);
+  cudaEventRecord(end);
   
-  
+  cudaEventSynchronize(end);
+  float ms = 0;
+  cudaEventElapsedTime(&ms, start, end);
+  printf("Execution configuration<<<%d,%d>>> Time elapsed %f ms\n",grid.x,block.x,ms);
+
+  cudaEventDestroy(start);
+  cudaEventDestroy(end);
 
   CHECK(cudaMemcpy(res_from_gpu_h,res_d,nByte,cudaMemcpyDeviceToHost));
-  iElaps=cpuSecond()-iStart;
-  printf("Execution configuration<<<%d,%d>>> Time elapsed %f sec\n",grid.x,block.x,iElaps);
+  // iElaps=cpuSecond()-iStart;
+  // printf("Execution configuration<<<%d,%d>>> Time elapsed %f sec\n",grid.x,block.x,iElaps);
   sumArrays(a_h,b_h,res_h,nElem);
 
   checkResult(res_h,res_from_gpu_h,nElem);
